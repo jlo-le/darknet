@@ -36,6 +36,7 @@ static float demo_thresh = 0;
 static int demo_ext_output = 0;
 static long long int frame_id = 0;
 static int demo_json_port = -1;
+static bool demo_skip_frame = false;
 
 
 static int avg_frames;
@@ -59,6 +60,8 @@ void *fetch_in_thread(void *ptr)
     while (!custom_atomic_load_int(&flag_exit)) {
         while (!custom_atomic_load_int(&run_fetch_in_thread)) {
             if (custom_atomic_load_int(&flag_exit)) return 0;
+            if (demo_skip_frame)
+                consume_frame(cap);
             this_thread_yield();
         }
         int dont_close_stream = 0;    // set 1 if your IP-camera periodically turns off and turns on video-stream
@@ -97,7 +100,8 @@ void *detect_in_thread(void *ptr)
 
         layer l = net.layers[net.n - 1];
         float *X = det_s.data;
-        float *prediction = network_predict(net, X);
+        //float *prediction =
+        network_predict(net, X);
 
         cv_images[demo_index] = det_img;
         det_img = cv_images[(demo_index + avg_frames / 2 + 1) % avg_frames];
@@ -107,6 +111,12 @@ void *detect_in_thread(void *ptr)
             dets = get_network_boxes(&net, get_width_mat(in_img), get_height_mat(in_img), demo_thresh, demo_thresh, 0, 1, &nboxes, 1); // letter box
         else
             dets = get_network_boxes(&net, net.w, net.h, demo_thresh, demo_thresh, 0, 1, &nboxes, 0); // resized
+
+        //const float nms = .45;
+        //if (nms) {
+        //    if (l.nms_kind == DEFAULT_NMS) do_nms_sort(dets, nboxes, l.classes, nms);
+        //    else diounms_sort(dets, nboxes, l.classes, nms, l.nms_kind, l.beta_nms);
+        //}
 
         custom_atomic_store_int(&run_detect_in_thread, 0);
     }
@@ -134,6 +144,10 @@ void demo(char *cfgfile, char *weightfile, float thresh, float hier_thresh, int 
     int frame_skip, char *prefix, char *out_filename, int mjpeg_port, int dontdraw_bbox, int json_port, int dont_show, int ext_output, int letter_box_in, int time_limit_sec, char *http_post_host,
     int benchmark, int benchmark_layers)
 {
+
+    int number_of_frames_to_save = 30;
+    int one_frame_per = 15;
+
     if (avgframes < 1) avgframes = 1;
     avg_frames = avgframes;
     letter_box = letter_box_in;
@@ -152,6 +166,7 @@ void demo(char *cfgfile, char *weightfile, float thresh, float hier_thresh, int 
     if(weightfile){
         load_weights(&net, weightfile);
     }
+    if (net.letter_box) letter_box = 1;
     net.benchmark_layers = benchmark_layers;
     fuse_conv_batchnorm(net);
     calculate_binary_weights(net);
@@ -160,9 +175,11 @@ void demo(char *cfgfile, char *weightfile, float thresh, float hier_thresh, int 
     if(filename){
         printf("video file: %s\n", filename);
         cap = get_capture_video_stream(filename);
+        demo_skip_frame = is_live_stream(filename);
     }else{
         printf("Webcam index: %d\n", cam_index);
         cap = get_capture_webcam(cam_index);
+        demo_skip_frame = true;
     }
 
     if (!cap) {
@@ -179,8 +196,11 @@ void demo(char *cfgfile, char *weightfile, float thresh, float hier_thresh, int 
 
     int i;
     for (i = 0; i < net.n; ++i) {
-        layer l = net.layers[i];
-        if (l.type == YOLO) l.mean_alpha = 1.0 / avg_frames;
+        layer lc = net.layers[i];
+        if (lc.type == YOLO) {
+            lc.mean_alpha = 1.0 / avg_frames;
+            l = lc;
+        }
     }
 
     if (l.classes != demo_classes) {
@@ -262,12 +282,28 @@ void demo(char *cfgfile, char *weightfile, float thresh, float hier_thresh, int 
                 else diounms_sort(local_dets, local_nboxes, l.classes, nms, l.nms_kind, l.beta_nms);
             }
 
+            if (l.embedding_size) set_track_id(local_dets, local_nboxes, demo_thresh, l.sim_thresh, l.track_ciou_norm, l.track_history_size, l.dets_for_track, l.dets_for_show);
+
             //printf("\033[2J");
             //printf("\033[1;1H");
             //printf("\nFPS:%.1f\n", fps);
-            // printf("Objects:\n\n");
+            printf("Objects:\n\n");
 
             ++frame_id;
+
+            // SAVE THE FRAME!!
+            if ( frame_id % one_frame_per == 0 ) {
+                char saved_frame_id[256];
+                sprintf(saved_frame_id, "saved_frames/image_%08d.jpg", frame_id);
+                save_cv_jpg(show_img, saved_frame_id);
+                if ( frame_id - ( number_of_frames_to_save * one_frame_per ) > 0 ) {
+                    char delete_frame_id[256];
+                    sprintf( delete_frame_id, "saved_frames/image_%08d.jpg", frame_id - ( number_of_frames_to_save * one_frame_per ) );
+                    remove( delete_frame_id );
+                }
+            }
+
+
             if (demo_json_port > 0) {
                 int timeout = 400000;
                 send_json(local_dets, local_nboxes, l.classes, demo_names, frame_id, demo_json_port, timeout);
@@ -287,7 +323,7 @@ void demo(char *cfgfile, char *weightfile, float thresh, float hier_thresh, int 
             if (!benchmark && !dontdraw_bbox) draw_detections_cv_v3(show_img, local_dets, local_nboxes, demo_thresh, demo_names, demo_alphabet, demo_classes, demo_ext_output);
             free_detections(local_dets, local_nboxes);
 
-            //printf("\nFPS:%.1f \t AVG_FPS:%.1f\n", fps, avg_fps);
+            printf("\nFPS:%.1f \t AVG_FPS:%.1f\n", fps, avg_fps);
 
             if(!prefix){
                 if (!dont_show) {
