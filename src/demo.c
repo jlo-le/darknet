@@ -138,6 +138,8 @@ void demo(char *cfgfile, char *weightfile, float thresh, float hier_thresh, int 
     int number_of_frames_to_save = 30;
     int one_frame_per = 15;
 
+    system("exec rm saved_frames/image_*");
+    
     if (avgframes < 1) avgframes = 1;
     avg_frames = avgframes;
     letter_box = letter_box_in;
@@ -276,11 +278,11 @@ void demo(char *cfgfile, char *weightfile, float thresh, float hier_thresh, int 
             // SAVE THE FRAME!!
             if ( frame_id % one_frame_per == 0 ) {
                 char saved_frame_id[256];
-                sprintf(saved_frame_id, "saved_frames/image_%08d.jpg", frame_id);
+                sprintf(saved_frame_id, "saved_frames/image_%08llu.jpg", frame_id);
                 save_cv_jpg(show_img, saved_frame_id);
                 if ( frame_id - ( number_of_frames_to_save * one_frame_per ) > 0 ) {
                     char delete_frame_id[256];
-                    sprintf( delete_frame_id, "saved_frames/image_%08d.jpg", frame_id - ( number_of_frames_to_save * one_frame_per ) );
+                    sprintf( delete_frame_id, "saved_frames/image_%08llu.jpg", frame_id - ( number_of_frames_to_save * one_frame_per ) );
                     remove( delete_frame_id );
                 }
             }
