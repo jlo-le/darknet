@@ -135,8 +135,8 @@ void demo(char *cfgfile, char *weightfile, float thresh, float hier_thresh, int 
     int benchmark, int benchmark_layers)
 {
 
-    int number_of_frames_to_save = 30;
-    int one_frame_per = 15;
+    int number_of_frames_to_save = 75;
+    int one_frame_per = 7;
 
     system("exec rm saved_frames/image_*");
     
