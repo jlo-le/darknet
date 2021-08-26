@@ -276,7 +276,7 @@ void demo(char *cfgfile, char *weightfile, float thresh, float hier_thresh, int 
             ++frame_id;
 
             // SAVE THE FRAME!!
-            if ( frame_id % one_frame_per == 0 ) {
+            if ( frame_id > 2 && (frame_id - 1 ) % one_frame_per == 0 ) {
                 char saved_frame_id[256];
                 sprintf(saved_frame_id, "saved_frames/image_%08llu.jpg", frame_id);
                 save_cv_jpg(show_img, saved_frame_id);
